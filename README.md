@@ -239,7 +239,7 @@ There are various commands available to interact with the datasets:
   Or run it on all articles as seen below. It is not recommended to `--force_update` in this case.
 
   ```sh
-  python main.py pinecone_update_all
+  python main.py pinecone_update all
   ```
 
   ## Cleanup Posts by Tags

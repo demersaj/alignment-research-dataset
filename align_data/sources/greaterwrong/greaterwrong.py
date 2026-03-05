@@ -168,27 +168,56 @@ class GreaterWrong(AlignmentDataset):
 
         logger.info(f"Fetching posts from {url}")
 
-        try:
-            res = requests.post(
-                url,
-                headers=headers,
-                json={"query": query},
-                timeout=30,
-            )
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request to {url} failed: {e}")
-            raise
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                res = requests.post(
+                    url,
+                    headers=headers,
+                    json={"query": query},
+                    timeout=30,
+                )
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Request to {url} failed: {e}")
+                raise
 
-        logger.info(f"Response status code: {res.status_code}")
+            logger.info(f"Response status code: {res.status_code}")
 
-        if res.status_code != 200:
-            logger.error(f"GraphQL request to {url} failed with status {res.status_code}")
-            logger.error(f"Response headers: {dict(res.headers)}")
-            logger.error(f"Response body (first 1000 chars): {res.text[:1000]}")
-            raise Exception(
-                f"GraphQL request to {url} failed with status {res.status_code}. "
-                f"Response: {res.text[:200]}"
-            )
+            if res.status_code == 429:
+                try:
+                    retry_after = int(res.headers.get("Retry-After", 60))
+                except (ValueError, TypeError):
+                    retry_after = 60
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Rate limited (429). Retrying in {retry_after}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    if not LW_GRAPHQL_ACCESS:
+                        logger.warning(
+                            "Consider setting LW_GRAPHQL_ACCESS in .env to bypass bot protection. "
+                            "See: https://www.lesswrong.com/posts/q9sPz2uTX27EBxqib/how-does-one-authenticate-with-the-lesswrong-api"
+                        )
+                    time.sleep(retry_after)
+                    continue
+                if not LW_GRAPHQL_ACCESS:
+                    raise Exception(
+                        f"GraphQL request to {url} failed with status 429 (rate limited / bot protection). "
+                        "Set LW_GRAPHQL_ACCESS in .env (format 'header-name: header-value'). "
+                        "Get a token by logging in at lesswrong.com, opening DevTools > Network, "
+                        "and copying the auth header from a GraphQL request. "
+                        "See: https://www.lesswrong.com/posts/q9sPz2uTX27EBxqib/how-does-one-authenticate-with-the-lesswrong-api"
+                    ) from None
+
+            if res.status_code != 200:
+                logger.error(f"GraphQL request to {url} failed with status {res.status_code}")
+                logger.error(f"Response headers: {dict(res.headers)}")
+                logger.error(f"Response body (first 1000 chars): {res.text[:1000]}")
+                raise Exception(
+                    f"GraphQL request to {url} failed with status {res.status_code}. "
+                    f"Response: {res.text[:200]}"
+                )
+
+            break
 
         try:
             data = res.json()
